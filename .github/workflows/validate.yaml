@@ -1,0 +1,99 @@
+name: Validate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build core
+        run: pnpm run build:core
+
+      - name: Build Worker
+        run: pnpm run build:app
+
+      - name: Start converter
+        env:
+          PORT: 3000
+        run: |
+          nohup node packages/app/src/server.js > converter.log 2>&1 &
+          echo $! > converter.pid
+
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+              echo "Converter is ready"
+              break
+            fi
+
+            if [ "$i" -eq 30 ]; then
+              echo "Converter failed to start"
+              cat converter.log
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+      - name: Convert subscription
+        env:
+          TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
+        run: node scripts/test-singbox.mjs
+
+      - name: Download sing-box 1.12.22
+        run: |
+          curl -L \
+            -o sing-box-1.12.22.tar.gz \
+            https://github.com/SagerNet/sing-box/releases/download/v1.12.22/sing-box-1.12.22-linux-amd64.tar.gz
+
+          tar -xzf sing-box-1.12.22.tar.gz
+
+          mv sing-box-1.12.22-linux-amd64/sing-box ./sing-box-1.12.22
+
+          chmod +x ./sing-box-1.12.22
+
+      - name: Check with sing-box 1.12.22
+        run: ./sing-box-1.12.22 check -c singbox-test.json
+
+      - name: Download sing-box 1.14.1
+        run: |
+          curl -L \
+            -o sing-box-1.14.1.tar.gz \
+            https://github.com/SagerNet/sing-box/releases/download/v1.14.1/sing-box-1.14.1-linux-amd64.tar.gz
+
+          tar -xzf sing-box-1.14.1.tar.gz
+
+          mv sing-box-1.14.1-linux-amd64/sing-box ./sing-box-1.14.1
+
+          chmod +x ./sing-box-1.14.1
+
+      - name: Check with sing-box 1.14.1
+        run: ./sing-box-1.14.1 check -c singbox-test.json
+
+      - name: Show validation result
+        run: |
+          echo "========================================"
+          echo "All validation checks passed."
+          echo "========================================"
