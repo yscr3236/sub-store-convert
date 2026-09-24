@@ -15,7 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-            submodules: recursive
+          submodules: recursive
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -28,13 +28,13 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Update Sub-Store vendor
         env:
           TAG: 2.41.0
         run: pnpm run update:vendor
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Build core
         run: pnpm run build:core
