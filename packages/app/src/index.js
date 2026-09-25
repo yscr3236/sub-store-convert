@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { convert, parsers } from "@sub-store-convert/core"
+import { convert } from "@sub-store-convert/core"
 
 const app = new Hono()
 
@@ -16,86 +16,47 @@ app.get('/sub', async (c) => {
         return c.text('Missing target or url', 400)
     }
 
-    // Temporary diagnostic mode.
-    // Does not return the subscription URL or decoded node contents.
     if (opts.debug === '1') {
-        try {
-            const response = await fetch(url)
-            const raw = await response.text()
+        const tests = [
+            ['default', {}],
+            ['browser', {
+                'User-Agent': 'Mozilla/5.0'
+            }],
+            ['curl', {
+                'User-Agent': 'curl/8.0'
+            }],
+            ['accept', {
+                'User-Agent': 'Mozilla/5.0',
+                'Accept': '*/*'
+            }]
+        ]
 
-            const firstChar = raw.length > 0 ? raw[0] : ''
-            const contentType = response.headers.get('content-type')
-            const contentLength = response.headers.get('content-length')
+        const results = []
 
-            let base64Valid = false
-            let decodedBytes = 0
-            let decodedFirstChar = ''
-            let decodedLines = 0
-            let ssLines = 0
-            let ssParsed = 0
-
+        for (const [name, headers] of tests) {
             try {
-                const normalized = raw.replace(/\s/g, '')
-                const padded =
-                    normalized +
-                    '='.repeat((4 - normalized.length % 4) % 4)
+                const response = await fetch(url, { headers })
+                const body = await response.arrayBuffer()
 
-                const decoded = atob(padded)
-
-                base64Valid = decoded.length > 0
-                decodedBytes = decoded.length
-                decodedFirstChar = decoded.length > 0 ? decoded[0] : ''
-
-                const lines = decoded
-                    .split(/\r?\n/)
-                    .map(line => line.trim())
-                    .filter(Boolean)
-
-                decodedLines = lines.length
-
-                for (const line of lines) {
-                    if (/^ss:\/\//.test(line)) {
-                        ssLines++
-
-                        for (const parser of parsers) {
-                            try {
-                                if (parser.test(line)) {
-                                    const parsed = parser.parse(line)
-                                    if (parsed) {
-                                        ssParsed++
-                                    }
-                                    break
-                                }
-                            } catch {
-                                // ignore individual parser errors
-                            }
-                        }
-                    }
-                }
-            } catch {
-                base64Valid = false
+                results.push({
+                    name,
+                    status: response.status,
+                    contentType: response.headers.get('content-type'),
+                    contentLength: response.headers.get('content-length'),
+                    bytes: body.byteLength
+                })
+            } catch (e) {
+                results.push({
+                    name,
+                    error: e instanceof Error ? e.message : String(e)
+                })
             }
-
-            return c.json({
-                ok: true,
-                httpStatus: response.status,
-                contentType,
-                contentLength,
-                bytes: raw.length,
-                firstChar,
-                base64Valid,
-                decodedBytes,
-                decodedFirstChar,
-                decodedLines,
-                ssLines,
-                ssParsed
-            })
-        } catch (e) {
-            return c.json({
-                ok: false,
-                error: e instanceof Error ? e.message : String(e)
-            }, 500)
         }
+
+        return c.json({
+            ok: true,
+            tests: results
+        })
     }
 
     delete opts.target
