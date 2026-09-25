@@ -51,47 +51,55 @@ jobs:
         env:
           TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
         run: |
-          test_target() {
-            TARGET="$1"
-            OUTPUT="$2"
+          HTTP_CODE=$(curl -sS \
+            --connect-timeout 20 \
+            --max-time 30 \
+            --get \
+            --data-urlencode "target=sing-box" \
+            --data-urlencode "url=${TEST_SUB_URL}" \
+            -o /tmp/sub-result.json \
+            -w "%{http_code}" \
+            "https://sub-workers.ymnh7087.workers.dev/sub")
 
-            HTTP_CODE=$(curl -sS \
-              --connect-timeout 20 \
-              --get \
-              --data-urlencode "target=${TARGET}" \
-              --data-urlencode "url=${TEST_SUB_URL}" \
-              -o "${OUTPUT}" \
-              -w "%{http_code}" \
-              "https://sub-workers.ymnh7087.workers.dev/sub")
+          echo "HTTP status: ${HTTP_CODE}"
 
-            echo "=== ${TARGET} ==="
-            echo "HTTP status: ${HTTP_CODE}"
+          node -e "
+            const fs = require('fs');
+            const raw = fs.readFileSync('/tmp/sub-result.json', 'utf8');
 
-            node -e "
-              const fs = require('fs');
-              const raw = fs.readFileSync('${OUTPUT}', 'utf8');
-              console.log('Response bytes:', Buffer.byteLength(raw));
+            console.log('Response bytes:', Buffer.byteLength(raw));
 
-              let d;
-              try {
-                d = JSON.parse(raw);
-              } catch {
-                console.log('Response is not valid JSON');
-                process.exit(1);
-              }
+            let d;
+            try {
+              d = JSON.parse(raw);
+            } catch {
+              console.error('Response is not valid JSON');
+              process.exit(1);
+            }
 
-              console.log('Top-level keys:', Object.keys(d).join(', ') || '(none)');
-              console.log('Outbounds:', Array.isArray(d.outbounds) ? d.outbounds.length : 0);
-              console.log('Endpoints:', Array.isArray(d.endpoints) ? d.endpoints.length : 0);
-              console.log('Has error:', typeof d.error === 'string');
+            console.log(
+              'Top-level keys:',
+              Object.keys(d).join(', ') || '(none)'
+            );
 
-              if (Array.isArray(d.outbounds) && d.outbounds.length > 0) {
-                console.log('Conversion OK');
-              } else {
-                console.log('Conversion returned zero outbounds');
-              }
-            "
-          }
+            console.log(
+              'Outbounds:',
+              Array.isArray(d.outbounds) ? d.outbounds.length : 0
+            );
 
-          test_target "sing-box" "/tmp/sing-box.json"
-          test_target "clash" "/tmp/clash.json"
+            console.log(
+              'Endpoints:',
+              Array.isArray(d.endpoints) ? d.endpoints.length : 0
+            );
+
+            console.log(
+              'Has error:',
+              typeof d.error === 'string'
+            );
+
+            if (Array.isArray(d.outbounds) && d.outbounds.length > 0) {
+              console.log('Conversion OK');
+            } else {
+              console.log('Conversion returned zero outbounds');
+            }
+          "
