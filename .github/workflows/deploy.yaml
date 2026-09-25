@@ -132,4 +132,44 @@ jobs:
             'Line count:',
             text.split(/\r?\n/).length
           );
+
+          try {
+            const decoded = Buffer.from(text, 'base64');
+            const decodedText = decoded.toString('utf8').trim();
+
+            console.log('=== Base64 decode ===');
+            console.log('Decoded bytes:', decoded.length);
+
+            console.log(
+              'Decoded first character:',
+              JSON.stringify(decodedText[0] || '')
+            );
+
+            console.log(
+              'Decoded line count:',
+              decodedText.split(/\r?\n/).length
+            );
+
+            if (decodedText.startsWith('{')) {
+              console.log('Decoded format: JSON-like');
+            } else if (
+              decodedText.startsWith('proxies:') ||
+              decodedText.includes('\nproxies:')
+            ) {
+              console.log('Decoded format: Clash YAML-like');
+            } else if (
+              /^(ss|ssr|vmess|vless|trojan|hysteria|hysteria2):\/\//m.test(decodedText)
+            ) {
+              console.log('Decoded format: proxy URI list');
+            } else if (
+              decodedText.startsWith('http://') ||
+              decodedText.startsWith('https://')
+            ) {
+              console.log('Decoded format: URL-like');
+            } else {
+              console.log('Decoded format: UNKNOWN');
+            }
+          } catch {
+            console.log('Base64 decode: FAILED');
+          }
           NODE
