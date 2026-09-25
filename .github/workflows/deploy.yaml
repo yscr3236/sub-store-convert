@@ -481,3 +481,50 @@ jobs:
             console.log('JSON: INVALID')
           }
           NODE
+
+      - name: Diagnose live Worker fetch
+        env:
+          TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
+        run: |
+          set -e
+
+          RESPONSE_FILE="/tmp/worker-debug.json"
+
+          curl -sS \
+            --connect-timeout 20 \
+            --max-time 60 \
+            -o "$RESPONSE_FILE" \
+            "https://sub-workers.ymnh7087.workers.dev/sub?target=sing-box&debug=1&url=${TEST_SUB_URL}"
+
+          echo "=== Live Worker fetch diagnostic ==="
+
+          node <<'NODE'
+          const fs = require('fs');
+
+          const file = '/tmp/worker-debug.json';
+          const raw = fs.readFileSync(file, 'utf8');
+
+          console.log('Response bytes:', Buffer.byteLength(raw));
+
+          try {
+            const data = JSON.parse(raw);
+
+            console.log('JSON: valid');
+            console.log('ok:', data.ok);
+            console.log('httpStatus:', data.httpStatus);
+            console.log('contentType:', data.contentType);
+            console.log('contentLength:', data.contentLength);
+            console.log('bytes:', data.bytes);
+            console.log('firstChar:', JSON.stringify(data.firstChar));
+            console.log('base64Valid:', data.base64Valid);
+            console.log('decodedBytes:', data.decodedBytes);
+            console.log('decodedFirstChar:', JSON.stringify(data.decodedFirstChar));
+            console.log('decodedLines:', data.decodedLines);
+            console.log('ssLines:', data.ssLines);
+            console.log('ssParsed:', data.ssParsed);
+          } catch (e) {
+            console.log('JSON: invalid');
+            console.log('First 100 chars:', JSON.stringify(raw.slice(0, 100)));
+            process.exit(1);
+          }
+          NODE
