@@ -305,3 +305,95 @@ jobs:
           console.log('All parsed proxies:', allParsed.length)
           console.log('Proxy types:', JSON.stringify(typeCounts))
           NODE
+
+      - name: Diagnose sing-box producer
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'fs'
+          import { parsers, parseProxyLines, loadProducer, produceOutput } from './packages/core/build/index.js'
+
+          const raw = fs.readFileSync('/tmp/raw-subscription', 'utf8').trim()
+
+          const decoded = Buffer.from(raw, 'base64').toString('utf8').trim()
+
+          const lines = decoded
+            .split(/\r?\n/)
+            .map(x => x.trim())
+            .filter(Boolean)
+
+          const proxyList = parseProxyLines(lines, {})
+
+          console.log('=== sing-box producer diagnostic ===')
+          console.log('Input proxies:', proxyList.length)
+
+          const typeCounts = {}
+
+          for (const proxy of proxyList) {
+            typeCounts[proxy.type] =
+              (typeCounts[proxy.type] || 0) + 1
+          }
+
+          console.log('Input proxy types:', JSON.stringify(typeCounts))
+
+          const producer = loadProducer('sing-box')
+
+          if (!producer) {
+            console.log('sing-box producer: NOT FOUND')
+            process.exit(1)
+          }
+
+          console.log('Producer found:', true)
+          console.log('Producer type:', producer.type || '(undefined)')
+          console.log('Producer name:', producer.name || '(undefined)')
+
+          let output
+
+          try {
+            output = produceOutput(producer, proxyList)
+          } catch (error) {
+            console.log('Producer error:', error?.message || 'unknown error')
+            process.exit(1)
+          }
+
+          console.log('Output bytes:', Buffer.byteLength(output || ''))
+
+          if (!output) {
+            console.log('Output is EMPTY')
+            process.exit(1)
+          }
+
+          try {
+            const json = JSON.parse(output)
+
+            console.log('Output JSON: valid')
+            console.log(
+              'Top-level keys:',
+              Object.keys(json).join(', ')
+            )
+
+            console.log(
+              'outbounds:',
+              Array.isArray(json.outbounds)
+                ? json.outbounds.length
+                : 'NOT_ARRAY'
+            )
+
+            if (Array.isArray(json.outbounds)) {
+              const outboundTypes = {}
+
+              for (const outbound of json.outbounds) {
+                if (outbound && outbound.type) {
+                  outboundTypes[outbound.type] =
+                    (outboundTypes[outbound.type] || 0) + 1
+                }
+              }
+
+              console.log(
+                'Outbound types:',
+                JSON.stringify(outboundTypes)
+              )
+            }
+          } catch {
+            console.log('Output JSON: INVALID')
+          }
+          NODE
