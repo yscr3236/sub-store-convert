@@ -66,7 +66,6 @@ jobs:
 
           node <<'NODE'
           const fs = require('fs');
-          const { Base64 } = require('js-base64');
 
           const raw = fs.readFileSync('/tmp/raw-subscription');
           const text = raw.toString('utf8').trim();
@@ -92,31 +91,51 @@ jobs:
             'aHkyOi8v',
             'd2lyZWd1YXJkOi8v',
             'd2c6Ly8=',
-            'dHVpYzovLw==',
+            'dHVpYzovLw=='
           ];
 
-          const isBase64Valid = Base64.isValid(text);
+          function isBase64Valid(value) {
+            if (!value || value.length % 4 !== 0) {
+              return false;
+            }
+
+            if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value)) {
+              return false;
+            }
+
+            try {
+              const decoded = Buffer.from(value, 'base64');
+              return decoded.length > 0;
+            } catch {
+              return false;
+            }
+          }
+
+          const isValid = isBase64Valid(text);
+
+          const matchedKeys = keys.filter(
+            key => text.includes(key)
+          );
+
+          const looksLikeURI =
+            /^\w+:\/\/\w+/im.test(text);
 
           console.log('Length:', text.length);
           console.log('Length % 4:', text.length % 4);
-          console.log('js-base64 Base64.isValid:', isBase64Valid);
-
-          const matchedKeys = keys.filter(k => text.includes(k));
-
+          console.log('Base64 validation:', isValid);
           console.log(
-            'Matched Base64 protocol keys:',
-            matchedKeys.length ? matchedKeys.join(', ') : '(none)'
+            'Matched protocol keys:',
+            matchedKeys.length
+              ? matchedKeys.join(', ')
+              : '(none)'
           );
-
-          const looksLikeURI = /^\w+:\/\/\w+/im.test(text);
-
           console.log(
             'Looks like raw URI already:',
             looksLikeURI
           );
 
           const base64PreprocessorTest =
-            isBase64Valid &&
+            isValid &&
             !looksLikeURI &&
             matchedKeys.length > 0;
 
@@ -125,11 +144,9 @@ jobs:
             base64PreprocessorTest
           );
 
-          const fallbackTest = isBase64Valid;
-
           console.log(
             'Fallback Base64 test result:',
-            fallbackTest
+            isValid
           );
 
           console.log(
@@ -142,18 +159,24 @@ jobs:
             text.split(/\r?\n/).length
           );
 
-          let decodedText = '';
-
           try {
-            const decoded = Base64.decode(text);
-            decodedText = decoded.trim();
+            const decodedText =
+              Buffer.from(text, 'base64')
+                .toString('utf8')
+                .trim();
 
             console.log('=== Base64 decode ===');
-            console.log('Decoded bytes:', Buffer.byteLength(decoded));
+
+            console.log(
+              'Decoded bytes:',
+              Buffer.byteLength(decodedText)
+            );
+
             console.log(
               'Decoded first character:',
               JSON.stringify(decodedText[0] || '')
             );
+
             console.log(
               'Decoded line count:',
               decodedText.split(/\r?\n/).length
@@ -167,10 +190,15 @@ jobs:
                 .map(x => x.trim())
                 .filter(Boolean)
             ) {
-              const match = line.match(/^([a-zA-Z0-9+.-]+):\/\//);
+              const match =
+                line.match(
+                  /^([a-zA-Z0-9+.-]+):\/\//
+                );
 
               if (match) {
-                const protocol = match[1].toLowerCase();
+                const protocol =
+                  match[1].toLowerCase();
+
                 protocols[protocol] =
                   (protocols[protocol] || 0) + 1;
               }
@@ -181,28 +209,22 @@ jobs:
               JSON.stringify(protocols)
             );
 
-            if (decodedText.startsWith('{')) {
-              console.log('Decoded format: JSON-like');
-            } else if (
-              decodedText.startsWith('proxies:') ||
-              decodedText.includes('\nproxies:')
+            if (
+              /^(ss|ssr|vmess|vless|trojan|hysteria|hysteria2):\/\//m
+                .test(decodedText)
             ) {
-              console.log('Decoded format: Clash YAML-like');
-            } else if (
-              /^(ss|ssr|vmess|vless|trojan|hysteria|hysteria2):\/\//m.test(decodedText)
-            ) {
-              console.log('Decoded format: proxy URI list');
-            } else if (
-              decodedText.startsWith('http://') ||
-              decodedText.startsWith('https://')
-            ) {
-              console.log('Decoded format: URL-like');
+              console.log(
+                'Decoded format: proxy URI list'
+              );
             } else {
-              console.log('Decoded format: UNKNOWN');
+              console.log(
+                'Decoded format: UNKNOWN'
+              );
             }
 
           } catch (error) {
-            console.log('Base64 decode: FAILED');
-            console.log('Decode error:', error.message);
+            console.log(
+              'Base64 decode: FAILED'
+            );
           }
           NODE
