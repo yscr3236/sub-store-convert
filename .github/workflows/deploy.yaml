@@ -47,7 +47,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy
 
-      - name: Diagnose subscription source
+      - name: Diagnose subscription format
         env:
           TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
         run: |
@@ -64,6 +64,72 @@ jobs:
           echo "Body bytes:"
           wc -c < /tmp/raw-subscription
 
-          echo "First 80 bytes (sanitized):"
-          head -c 80 /tmp/raw-subscription | tr '\r\n' ' ' | cut -c 1-80
-          echo
+          node <<'NODE'
+          const fs = require('fs');
+
+          const raw = fs.readFileSync('/tmp/raw-subscription');
+          const text = raw.toString('utf8').trim();
+
+          console.log('=== Format detection ===');
+
+          if (!text) {
+            console.log('Detected: EMPTY');
+            process.exit(0);
+          }
+
+          let detected = [];
+
+          try {
+            const json = JSON.parse(text);
+            detected.push('JSON');
+
+            if (Array.isArray(json)) {
+              detected.push('JSON array');
+            } else if (json && typeof json === 'object') {
+              detected.push('JSON object');
+            }
+          } catch {}
+
+          if (/^[-\w]+:\s/m.test(text)) {
+            detected.push('YAML-like');
+          }
+
+          if (/^(ss|ssr|vmess|vless|trojan|hysteria|hysteria2):\/\//m.test(text)) {
+            detected.push('proxy URI list');
+          }
+
+          if (/^proxies:\s*$/m.test(text)) {
+            detected.push('Clash YAML');
+          }
+
+          if (/^mixed-port:\s*/m.test(text) || /^port:\s*/m.test(text)) {
+            detected.push('Clash-style config');
+          }
+
+          if (/^[A-Za-z0-9+/=\r\n]+$/.test(text)) {
+            detected.push('Base64-like');
+          }
+
+          if (/^<!DOCTYPE html/i.test(text) || /^<html/i.test(text)) {
+            detected.push('HTML');
+          }
+
+          if (/^(vmess|vless|trojan|ss|ssr|hysteria2?):\/\//i.test(text)) {
+            detected.push('single proxy URI');
+          }
+
+          console.log(
+            'Detected:',
+            detected.length ? detected.join(', ') : 'UNKNOWN TEXT'
+          );
+
+          console.log(
+            'First character:',
+            JSON.stringify(text[0])
+          );
+
+          console.log(
+            'Line count:',
+            text.split(/\r?\n/).length
+          );
+          NODE
