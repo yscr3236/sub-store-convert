@@ -228,3 +228,80 @@ jobs:
             );
           }
           NODE
+
+      - name: Diagnose SS parser
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'fs'
+          import { parsers, parseProxyLines } from './packages/core/build/index.js'
+
+          const raw = fs.readFileSync('/tmp/raw-subscription', 'utf8').trim()
+
+          let decoded = raw
+          try {
+            decoded = Buffer.from(raw, 'base64').toString('utf8').trim()
+          } catch {}
+
+          const lines = decoded
+            .split(/\r?\n/)
+            .map(x => x.trim())
+            .filter(Boolean)
+
+          const ssLines = lines.filter(x => /^ss:\/\//.test(x))
+
+          const ss = parsers.find(p => p.name === 'URI SS Parser')
+
+          if (!ss) {
+            console.log('URI SS Parser: NOT FOUND')
+            process.exit(1)
+          }
+
+          let matched = 0
+          let parsed = 0
+          let complete = 0
+          let failed = 0
+
+          for (const line of ssLines) {
+            if (!ss.test(line)) continue
+
+            matched++
+
+            try {
+              const proxy = ss.parse(line)
+
+              if (proxy) {
+                parsed++
+
+                if (
+                  proxy.server &&
+                  proxy.port &&
+                  proxy.cipher &&
+                  proxy.password
+                ) {
+                  complete++
+                }
+              }
+            } catch {
+              failed++
+            }
+          }
+
+          const allParsed = parseProxyLines(lines, {})
+
+          const typeCounts = {}
+
+          for (const proxy of allParsed) {
+            typeCounts[proxy.type] =
+              (typeCounts[proxy.type] || 0) + 1
+          }
+
+          console.log('=== SS parser diagnostic ===')
+          console.log('Total decoded lines:', lines.length)
+          console.log('SS lines:', ssLines.length)
+          console.log('SS parser matched:', matched)
+          console.log('SS parser parsed:', parsed)
+          console.log('SS parsed complete:', complete)
+          console.log('SS parse failed:', failed)
+          console.log('All parsed proxies:', allParsed.length)
+          console.log('Proxy types:', JSON.stringify(typeCounts))
+          NODE
