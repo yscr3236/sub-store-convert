@@ -3,6 +3,10 @@ name: Deploy Cloudflare Worker
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - master
+
 permissions:
   contents: read
 
@@ -43,7 +47,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy
 
-            - name: Smoke test Worker
+      - name: Smoke test Worker
         env:
           TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
         run: |
