@@ -47,59 +47,23 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy
 
-      - name: Smoke test Worker
+      - name: Diagnose subscription source
         env:
           TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
         run: |
-          HTTP_CODE=$(curl -sS \
+          curl -sS \
             --connect-timeout 20 \
             --max-time 30 \
-            --get \
-            --data-urlencode "target=sing-box" \
-            --data-urlencode "url=${TEST_SUB_URL}" \
-            -o /tmp/sub-result.json \
-            -w "%{http_code}" \
-            "https://sub-workers.ymnh7087.workers.dev/sub")
+            -D /tmp/sub-headers.txt \
+            -o /tmp/raw-subscription \
+            "${TEST_SUB_URL}"
 
-          echo "HTTP status: ${HTTP_CODE}"
+          echo "=== Subscription response ==="
+          grep -Ei '^(HTTP/|content-type:|content-length:|content-encoding:)' /tmp/sub-headers.txt || true
 
-          node -e "
-            const fs = require('fs');
-            const raw = fs.readFileSync('/tmp/sub-result.json', 'utf8');
+          echo "Body bytes:"
+          wc -c < /tmp/raw-subscription
 
-            console.log('Response bytes:', Buffer.byteLength(raw));
-
-            let d;
-            try {
-              d = JSON.parse(raw);
-            } catch {
-              console.error('Response is not valid JSON');
-              process.exit(1);
-            }
-
-            console.log(
-              'Top-level keys:',
-              Object.keys(d).join(', ') || '(none)'
-            );
-
-            console.log(
-              'Outbounds:',
-              Array.isArray(d.outbounds) ? d.outbounds.length : 0
-            );
-
-            console.log(
-              'Endpoints:',
-              Array.isArray(d.endpoints) ? d.endpoints.length : 0
-            );
-
-            console.log(
-              'Has error:',
-              typeof d.error === 'string'
-            );
-
-            if (Array.isArray(d.outbounds) && d.outbounds.length > 0) {
-              console.log('Conversion OK');
-            } else {
-              console.log('Conversion returned zero outbounds');
-            }
-          "
+          echo "First 80 bytes (sanitized):"
+          head -c 80 /tmp/raw-subscription | tr '\r\n' ' ' | cut -c 1-80
+          echo
