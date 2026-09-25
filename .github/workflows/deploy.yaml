@@ -448,3 +448,36 @@ jobs:
             console.log('JSON: INVALID')
           }
           NODE
+
+      - name: Diagnose Worker fetch
+        env:
+          TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
+        run: |
+          curl -sS \
+            --connect-timeout 20 \
+            --max-time 60 \
+            -o /tmp/worker-debug.json \
+            "https://sub-workers.ymnh7087.workers.dev/sub?target=sing-box&debug=true&url=${TEST_SUB_URL}"
+
+          node <<'NODE'
+          const fs = require('fs')
+
+          const raw = fs.readFileSync('/tmp/worker-debug.json', 'utf8').trim()
+
+          console.log('=== Worker fetch diagnostic ===')
+          console.log('Response bytes:', Buffer.byteLength(raw))
+
+          try {
+            const json = JSON.parse(raw)
+
+            console.log('JSON: valid')
+            console.log('ok:', json.ok)
+            console.log('status:', json.status)
+            console.log('contentType:', json.contentType)
+            console.log('contentLength:', json.contentLength)
+            console.log('bytes:', json.bytes)
+            console.log('firstChar:', JSON.stringify(json.firstChar))
+          } catch {
+            console.log('JSON: INVALID')
+          }
+          NODE
