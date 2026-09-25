@@ -66,6 +66,7 @@ jobs:
 
           node <<'NODE'
           const fs = require('fs');
+          const { Base64 } = require('js-base64');
 
           const raw = fs.readFileSync('/tmp/raw-subscription');
           const text = raw.toString('utf8').trim();
@@ -77,50 +78,58 @@ jobs:
             process.exit(0);
           }
 
-          let detected = [];
+          const keys = [
+            'dm1lc3M',
+            'c3NyOi8v',
+            'c29ja3M6Ly',
+            'dHJvamFu',
+            'c3M6Ly',
+            'c3NkOi8v',
+            'c2hhZG93',
+            'aHR0c',
+            'dmxlc3M=',
+            'aHlzdGVyaWEy',
+            'aHkyOi8v',
+            'd2lyZWd1YXJkOi8v',
+            'd2c6Ly8=',
+            'dHVpYzovLw==',
+          ];
 
-          try {
-            const json = JSON.parse(text);
-            detected.push('JSON');
+          const isBase64Valid = Base64.isValid(text);
 
-            if (Array.isArray(json)) {
-              detected.push('JSON array');
-            } else if (json && typeof json === 'object') {
-              detected.push('JSON object');
-            }
-          } catch {}
+          console.log('Length:', text.length);
+          console.log('Length % 4:', text.length % 4);
+          console.log('js-base64 Base64.isValid:', isBase64Valid);
 
-          if (/^[-\w]+:\s/m.test(text)) {
-            detected.push('YAML-like');
-          }
-
-          if (/^(ss|ssr|vmess|vless|trojan|hysteria|hysteria2):\/\//m.test(text)) {
-            detected.push('proxy URI list');
-          }
-
-          if (/^proxies:\s*$/m.test(text)) {
-            detected.push('Clash YAML');
-          }
-
-          if (/^mixed-port:\s*/m.test(text) || /^port:\s*/m.test(text)) {
-            detected.push('Clash-style config');
-          }
-
-          if (/^[A-Za-z0-9+/=\r\n]+$/.test(text)) {
-            detected.push('Base64-like');
-          }
-
-          if (/^<!DOCTYPE html/i.test(text) || /^<html/i.test(text)) {
-            detected.push('HTML');
-          }
-
-          if (/^(vmess|vless|trojan|ss|ssr|hysteria2?):\/\//i.test(text)) {
-            detected.push('single proxy URI');
-          }
+          const matchedKeys = keys.filter(k => text.includes(k));
 
           console.log(
-            'Detected:',
-            detected.length ? detected.join(', ') : 'UNKNOWN TEXT'
+            'Matched Base64 protocol keys:',
+            matchedKeys.length ? matchedKeys.join(', ') : '(none)'
+          );
+
+          const looksLikeURI = /^\w+:\/\/\w+/im.test(text);
+
+          console.log(
+            'Looks like raw URI already:',
+            looksLikeURI
+          );
+
+          const base64PreprocessorTest =
+            isBase64Valid &&
+            !looksLikeURI &&
+            matchedKeys.length > 0;
+
+          console.log(
+            'Base64Encoded() test result:',
+            base64PreprocessorTest
+          );
+
+          const fallbackTest = isBase64Valid;
+
+          console.log(
+            'Fallback Base64 test result:',
+            fallbackTest
           );
 
           console.log(
@@ -133,21 +142,43 @@ jobs:
             text.split(/\r?\n/).length
           );
 
+          let decodedText = '';
+
           try {
-            const decoded = Buffer.from(text, 'base64');
-            const decodedText = decoded.toString('utf8').trim();
+            const decoded = Base64.decode(text);
+            decodedText = decoded.trim();
 
             console.log('=== Base64 decode ===');
-            console.log('Decoded bytes:', decoded.length);
-
+            console.log('Decoded bytes:', Buffer.byteLength(decoded));
             console.log(
               'Decoded first character:',
               JSON.stringify(decodedText[0] || '')
             );
-
             console.log(
               'Decoded line count:',
               decodedText.split(/\r?\n/).length
+            );
+
+            const protocols = {};
+
+            for (
+              const line of decodedText
+                .split(/\r?\n/)
+                .map(x => x.trim())
+                .filter(Boolean)
+            ) {
+              const match = line.match(/^([a-zA-Z0-9+.-]+):\/\//);
+
+              if (match) {
+                const protocol = match[1].toLowerCase();
+                protocols[protocol] =
+                  (protocols[protocol] || 0) + 1;
+              }
+            }
+
+            console.log(
+              'Decoded protocols:',
+              JSON.stringify(protocols)
             );
 
             if (decodedText.startsWith('{')) {
@@ -169,7 +200,9 @@ jobs:
             } else {
               console.log('Decoded format: UNKNOWN');
             }
-          } catch {
+
+          } catch (error) {
             console.log('Base64 decode: FAILED');
+            console.log('Decode error:', error.message);
           }
           NODE
