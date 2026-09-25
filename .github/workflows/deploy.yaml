@@ -43,4 +43,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm exec wrangler deploy
       - name: Smoke test Worker
-        run: curl -fsv --connect-timeout 10 https://sub-workers.ymnh7087.workers.dev/
+         env:
+             TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
+         run: |
+           curl -fsv --connect-timeout 20 \
+            --get \
+            --data-urlencode "target=sing-box" \
+            --data-urlencode "url=${TEST_SUB_URL}" \
+            "https://sub-workers.ymnh7087.workers.dev/sub" \
+            -o /tmp/sub-result.json
+
+          node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync('/tmp/sub-result.json','utf8')); if (!Array.isArray(d.outbounds) || d.outbounds.length === 0) { throw new Error('Conversion returned zero outbounds'); } console.log('Conversion OK: ' + d.outbounds.length + ' outbounds');"
