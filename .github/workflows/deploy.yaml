@@ -397,3 +397,54 @@ jobs:
             console.log('Output JSON: INVALID')
           }
           NODE
+
+      - name: Diagnose live Worker output
+        env:
+          TEST_SUB_URL: ${{ secrets.TEST_SUB_URL }}
+        run: |
+          curl -sS \
+            --connect-timeout 20 \
+            --max-time 60 \
+            -o /tmp/worker-output.json \
+            -w 'HTTP status: %{http_code}\n' \
+            "https://sub-workers.ymnh7087.workers.dev/sub?target=sing-box&url=${TEST_SUB_URL}"
+
+          node <<'NODE'
+          const fs = require('fs')
+
+          const raw = fs.readFileSync('/tmp/worker-output.json', 'utf8').trim()
+
+          console.log('=== Live Worker diagnostic ===')
+          console.log('Response bytes:', Buffer.byteLength(raw))
+
+          try {
+            const json = JSON.parse(raw)
+
+            console.log('JSON: valid')
+            console.log('Top-level keys:', Object.keys(json).join(', '))
+            console.log(
+              'outbounds:',
+              Array.isArray(json.outbounds)
+                ? json.outbounds.length
+                : 'NOT_ARRAY'
+            )
+
+            if (Array.isArray(json.outbounds)) {
+              const types = {}
+
+              for (const outbound of json.outbounds) {
+                if (outbound?.type) {
+                  types[outbound.type] =
+                    (types[outbound.type] || 0) + 1
+                }
+              }
+
+              console.log(
+                'Outbound types:',
+                JSON.stringify(types)
+              )
+            }
+          } catch {
+            console.log('JSON: INVALID')
+          }
+          NODE
